@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>CompressionArtifactsEffect</RootNamespace>
+    <TargetFramework>net11.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="CodecProbe\**\*.cs" />
+    <Compile Remove="UiProbe\**\*.cs" />
+    <EmbeddedResource Include="CompressionArtifacts.png" />
+    <PackageReference Include="Paint.NET.Plugin.SDK" Version="5.2.0" />
+    <PackageReference Include="Magick.NET-Q8-x64" Version="14.15.0" />
+    <PackageReference Include="LibHeifSharp" Version="3.2.0" />
+    <PackageReference Include="LibHeif.Native.Runtime" Version="1.20.2" />
+  </ItemGroup>
+</Project>

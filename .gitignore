@@ -1,0 +1,7 @@
+.build-home/
+.build-tools/
+**/bin/
+**/obj/
+CompressionArtifacts/dist/
+CompressionArtifacts/*.zip
+CompressionArtifacts/*.7z
