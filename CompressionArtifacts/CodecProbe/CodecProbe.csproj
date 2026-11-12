@@ -2,15 +2,10 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net11.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Magick.NET-Q8-x64" Version="14.15.0" />
-    <PackageReference Include="LibHeifSharp" Version="3.2.0" />
-    <PackageReference Include="LibHeif.Native.Runtime" Version="1.20.2" />
     <Compile Include="..\CompressionCodec.cs" Link="CompressionCodec.cs" />
-    <Compile Include="..\AvifCodec.cs" Link="AvifCodec.cs" />
   </ItemGroup>
 </Project>

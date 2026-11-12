@@ -1,6 +1,8 @@
 #nullable enable
 using PaintDotNet;
 using PaintDotNet.Effects;
+using PaintDotNet.ComponentModel;
+using PaintDotNet.FileTypes;
 using PaintDotNet.Imaging;
 using PaintDotNet.IndirectUI;
 using PaintDotNet.PropertySystem;
@@ -12,17 +14,21 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
+using System.Threading;
 
 [assembly: AssemblyProduct("Compression Artifacts")]
 [assembly: AssemblyTitle("Compression Artifacts plugin for Paint.NET")]
 [assembly: AssemblyDescription("Preview compression artifacts without saving the image")]
 [assembly: AssemblyConfiguration("effect|photo|compression|jpeg|webp|avif|heic")]
-[assembly: AssemblyCopyright("Copyright ©2026")]
+[assembly: AssemblyCopyright("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyVersion("2.0.0.0")]
+[assembly: AssemblyFileVersion("2.0.0.0")]
+[assembly: AssemblyInformationalVersion("2.0.0")]
 [assembly: SupportedOSPlatform("Windows")]
 [assembly: ComVisible(false)]
 [assembly: InternalsVisibleTo("UiProbe")]
+[assembly: InternalsVisibleTo("HostProbe")]
 
 namespace CompressionArtifactsEffect;
 
@@ -30,7 +36,7 @@ public sealed class PluginSupportInfo : IPluginSupportInfo
 {
     public string DisplayName => "Compression Artifacts";
     public string Author => "Compression Artifacts contributors";
-    public string Copyright => "Copyright ©2026";
+    public string Copyright => string.Empty;
     public Version Version => GetType().Assembly.GetName().Version!;
     public Uri WebsiteUri { get; } = new("https://github.com/martin-hyde/pdn-CompressionArtifacts");
 }
@@ -38,7 +44,8 @@ public sealed class PluginSupportInfo : IPluginSupportInfo
 [PluginSupportInfo(typeof(PluginSupportInfo))]
 public sealed class CompressionArtifactsEffect : PropertyBasedBitmapEffect
 {
-    internal enum PropertyNames { Codec, Quality, Chroma, Effort, Lossless, AlphaQuality, BackgroundColor, PreserveJpegAlpha, AvifSpeed, AvifThreads }
+    // PreserveJpegAlpha remains the token key for existing saved settings; it now also applies to HEIC.
+    internal enum PropertyNames { Codec, Quality, Chroma, Effort, Lossless, LosslessAlpha, BackgroundColor, PreserveJpegAlpha }
     private readonly object renderSync = new();
     private byte[]? renderedBgra;
     private Exception? renderError;
@@ -54,11 +61,9 @@ public sealed class CompressionArtifactsEffect : PropertyBasedBitmapEffect
         StaticListChoiceProperty.CreateForEnum(PropertyNames.Codec, CodecOptions.JPEG),
         new Int32Property(PropertyNames.Quality, 35, 1, 100),
         StaticListChoiceProperty.CreateForEnum(PropertyNames.Chroma, ChromaOptions.YUV420),
-        new Int32Property(PropertyNames.Effort, 5, 0, 9),
-        new Int32Property(PropertyNames.AvifSpeed, 9, 0, 9),
-        new Int32Property(PropertyNames.AvifThreads, 0, 0, 64),
+        new Int32Property(PropertyNames.Effort, 0, 0, 9),
         new BooleanProperty(PropertyNames.Lossless, false),
-        new Int32Property(PropertyNames.AlphaQuality, 75, 0, 100),
+        new BooleanProperty(PropertyNames.LosslessAlpha, true),
         new BooleanProperty(PropertyNames.PreserveJpegAlpha, true),
         new Int32Property(PropertyNames.BackgroundColor, 0xFFFFFF, 0, 0xFFFFFF),
     ], CreateControlRules());
@@ -70,13 +75,11 @@ public sealed class CompressionArtifactsEffect : PropertyBasedBitmapEffect
             new object[] { CodecOptions.JPEG, CodecOptions.JPEG_XR, CodecOptions.HEIC }, false);
         yield return DisableExcept(PropertyNames.Lossless, false, CodecOptions.JPEG_XL, CodecOptions.WebP, CodecOptions.AV1_AVIF);
         yield return new ReadOnlyBoundToBooleanRule(PropertyNames.Quality, PropertyNames.Lossless, false);
-        yield return DisableExcept(PropertyNames.Chroma, true, CodecOptions.JPEG, CodecOptions.HEIC, CodecOptions.AV1_AVIF);
-        yield return DisableExcept(PropertyNames.Effort, true, CodecOptions.JPEG_XL, CodecOptions.WebP);
-        yield return DisableExcept(PropertyNames.AvifSpeed, true, CodecOptions.AV1_AVIF);
-        yield return DisableExcept(PropertyNames.AvifThreads, true, CodecOptions.AV1_AVIF);
-        yield return DisableExcept(PropertyNames.AlphaQuality, true, CodecOptions.WebP, CodecOptions.AV1_AVIF);
-        yield return DisableExcept(PropertyNames.PreserveJpegAlpha, false, CodecOptions.JPEG);
-        yield return DisableExcept(PropertyNames.BackgroundColor, false, CodecOptions.JPEG);
+        yield return DisableExcept(PropertyNames.Chroma, true, CodecOptions.JPEG, CodecOptions.AV1_AVIF);
+        yield return DisableExcept(PropertyNames.Effort, true, CodecOptions.JPEG_XL, CodecOptions.WebP, CodecOptions.AV1_AVIF);
+        yield return DisableExcept(PropertyNames.LosslessAlpha, true, CodecOptions.AV1_AVIF);
+        yield return DisableExcept(PropertyNames.PreserveJpegAlpha, false, CodecOptions.JPEG, CodecOptions.HEIC);
+        yield return DisableExcept(PropertyNames.BackgroundColor, false, CodecOptions.JPEG, CodecOptions.HEIC);
     }
 
     private static PropertyCollectionRule DisableExcept(PropertyNames target, bool disableForLossless, params CodecOptions[] supported)
@@ -90,22 +93,29 @@ public sealed class CompressionArtifactsEffect : PropertyBasedBitmapEffect
     protected override ControlInfo OnCreateConfigUI(PropertyCollection props)
     {
         ControlInfo config = CreateDefaultConfigUI(props);
-        Set(config, PropertyNames.Codec, "Codec (HEIC is an approximation)");
+        Set(config, PropertyNames.Codec, "Codec");
         Set(config, PropertyNames.Quality, "Quality / fidelity");
         Set(config, PropertyNames.Chroma, "Chroma subsampling");
-        Set(config, PropertyNames.Effort, "Encoding effort (JXL/WebP: 0 fast – 9 slow)");
-        Set(config, PropertyNames.AvifSpeed, "AVIF speed (0 slow – 9 fast)");
-        Set(config, PropertyNames.AvifThreads, "AVIF CPU threads (0 = automatic)");
-        Set(config, PropertyNames.Lossless, "Lossless (JXL/WebP/AVIF: no artifacts)");
-        Set(config, PropertyNames.AlphaQuality, "Alpha quality (WebP/AVIF)");
-        Set(config, PropertyNames.PreserveJpegAlpha, "Preserve original transparency (JPEG effect)");
-        Set(config, PropertyNames.BackgroundColor, "JPEG background / transparent-pixel fill");
+        Set(config, PropertyNames.Effort, "Encoding effort (0 fast – 9 slow)");
+        Set(config, PropertyNames.Lossless, "Lossless");
+        config.SetPropertyControlValue(PropertyNames.Lossless, ControlInfoPropertyNames.Description, "Lossless (JXL/WebP/AVIF; no artifacts)");
+        Set(config, PropertyNames.LosslessAlpha, "Lossless alpha");
+        config.SetPropertyControlValue(PropertyNames.LosslessAlpha, ControlInfoPropertyNames.Description, "Lossless alpha (AVIF)");
+        Set(config, PropertyNames.PreserveJpegAlpha, "Preserve original transparency");
+        config.SetPropertyControlValue(PropertyNames.PreserveJpegAlpha, ControlInfoPropertyNames.Description, "Preserve original transparency (JPEG/HEIC)");
+        Set(config, PropertyNames.BackgroundColor, "JPEG/HEIC Alpha Fill");
         config.SetPropertyControlType(PropertyNames.BackgroundColor, PropertyControlType.ColorWheel);
         config.SetPropertyControlValue(PropertyNames.Quality, ControlInfoPropertyNames.SliderLargeChange, 10);
         config.SetPropertyControlValue(PropertyNames.Effort, ControlInfoPropertyNames.SliderLargeChange, 1);
-        config.SetPropertyControlValue(PropertyNames.AvifSpeed, ControlInfoPropertyNames.SliderLargeChange, 1);
-        config.SetPropertyControlValue(PropertyNames.AvifThreads, ControlInfoPropertyNames.SliderLargeChange, 4);
-        config.SetPropertyControlValue(PropertyNames.AlphaQuality, ControlInfoPropertyNames.SliderLargeChange, 10);
+        PropertyControlInfo codecs = config.FindControlForPropertyName(PropertyNames.Codec)!;
+        codecs.SetValueDisplayName(CodecOptions.JPEG_XL, "JPEG XL");
+        codecs.SetValueDisplayName(CodecOptions.JPEG_XR, "JPEG XR");
+        codecs.SetValueDisplayName(CodecOptions.AV1_AVIF, "AV1 / AVIF");
+        PropertyControlInfo chroma = config.FindControlForPropertyName(PropertyNames.Chroma)!;
+        chroma.SetValueDisplayName(ChromaOptions.Auto, "Automatic");
+        chroma.SetValueDisplayName(ChromaOptions.YUV444, "4:4:4");
+        chroma.SetValueDisplayName(ChromaOptions.YUV422, "4:2:2");
+        chroma.SetValueDisplayName(ChromaOptions.YUV420, "4:2:0");
         return config;
     }
 
@@ -128,18 +138,20 @@ public sealed class CompressionArtifactsEffect : PropertyBasedBitmapEffect
 
     protected override void OnRender(IBitmapEffectOutput output)
     {
+        // Capture only for this call. The host replaces its cancellation token
+        // whenever a new rendering task starts.
+        CancellationToken cancellation = CancellationToken;
         // Snapshot the cached result while holding the lock: changing a token must
         // never leave tile workers reading a reset width or a cleared pixel array.
         byte[]? pixels;
         int imageWidth;
         lock (renderSync)
         {
-            if (IsCancelRequested) return;
+            if (cancellation.IsCancellationRequested) return;
             if (renderedBgra is null && renderError is null)
             {
-                try { renderedBgra = EncodeDecode(); }
-                catch (OperationCanceledException) when (IsCancelRequested) { return; }
-                catch (Exception) when (IsCancelRequested) { return; }
+                try { renderedBgra = EncodeDecode(cancellation); }
+                catch (Exception) when (cancellation.IsCancellationRequested) { return; }
                 catch (Exception ex) { renderError = ex; }
             }
             if (renderError is not null)
@@ -147,49 +159,52 @@ public sealed class CompressionArtifactsEffect : PropertyBasedBitmapEffect
             pixels = renderedBgra;
             imageWidth = renderedWidth;
         }
-        if (IsCancelRequested || pixels is null) return;
+        if (cancellation.IsCancellationRequested || pixels is null) return;
         using IBitmapLock<ColorBgra32> destinationLock = output.LockBgra32();
         RegionPtr<ColorBgra32> destination = destinationLock.AsRegionPtr();
-        RectInt32 bounds = output.Bounds;
-        for (int y = bounds.Top; y < bounds.Bottom; y++)
+        try
         {
-            if (IsCancelRequested) return;
-            for (int x = bounds.Left; x < bounds.Right; x++)
-            {
-                int i = ((y * imageWidth) + x) * 4;
-                destination[x - bounds.Left, y - bounds.Top] = new ColorBgra32(pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]);
-            }
+            BitmapTransfer.CopyRegion(pixels, imageWidth, pixels.Length / (imageWidth * 4), output.Bounds, destination, cancellation);
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
     }
 
-    private byte[] EncodeDecode()
+    private byte[] EncodeDecode(CancellationToken cancellation)
     {
-        using IEffectInputBitmap<ColorBgra32> sourceBitmap = Environment.GetSourceBitmapBgra32();
-        using IBitmapLock<ColorBgra32> sourceLock = sourceBitmap.Lock(new RectInt32(0, 0, sourceBitmap.Size));
-        RegionPtr<ColorBgra32> source = sourceLock.AsRegionPtr();
-        int width = sourceBitmap.Size.Width, height = sourceBitmap.Size.Height;
-        renderedWidth = width;
-        byte[] input = new byte[checked(width * height * 4)];
-        for (int y = 0; y < height; y++)
+        byte[] input;
+        int width, height;
+        using (IEffectInputBitmap<ColorBgra32> sourceBitmap = Environment.GetSourceBitmapBgra32())
         {
-            if (IsCancelRequested) throw new OperationCanceledException();
-            for (int x = 0; x < width; x++)
-            {
-                ColorBgra32 pixel = source[x, y];
-                int i = ((y * width) + x) * 4;
-                input[i] = pixel.B;
-                input[i + 1] = pixel.G;
-                input[i + 2] = pixel.R;
-                input[i + 3] = pixel.A;
-            }
+            width = sourceBitmap.Size.Width;
+            height = sourceBitmap.Size.Height;
+            input = BitmapTransfer.ReadSource(sourceBitmap, cancellation);
         }
+        // Release the host bitmap before entering a potentially long native encode.
+        renderedWidth = width;
         var settings = new CompressionSettings(
             (CodecOptions)GetInt(PropertyNames.Codec), GetInt(PropertyNames.Quality),
             (ChromaOptions)GetInt(PropertyNames.Chroma), GetInt(PropertyNames.Effort),
-            (bool)Token!.GetProperty(PropertyNames.Lossless)!.Value!, GetInt(PropertyNames.AlphaQuality),
+            (bool)Token!.GetProperty(PropertyNames.Lossless)!.Value!,
             GetInt(PropertyNames.BackgroundColor), (bool)Token.GetProperty(PropertyNames.PreserveJpegAlpha)!.Value!,
-            GetInt(PropertyNames.AvifSpeed), GetInt(PropertyNames.AvifThreads));
-        return CompressionCodec.EncodeDecode(input, width, height, settings, () => IsCancelRequested);
+            (bool)Token.GetProperty(PropertyNames.LosslessAlpha)!.Value!);
+        ICompressionBackend? backend = settings.UsesLossless ? null :
+            new PaintNetCodecBackend(Services.GetService<IFileTypesService>()!,
+                Services.GetService<IFileTypeDocumentFactory>()!, Environment.Document.ColorContext, cancellation);
+        return CompressionCodec.EncodeDecode(input, width, height, settings, () => cancellation.IsCancellationRequested, backend);
+    }
+
+    protected override void OnDispose(bool disposing)
+    {
+        if (disposing)
+        {
+            lock (renderSync)
+            {
+                renderedBgra = null;
+                renderError = null;
+                renderedWidth = 0;
+            }
+        }
+        base.OnDispose(disposing);
     }
 
     private int GetInt(PropertyNames name) => (int)Token!.GetProperty(name)!.Value!;

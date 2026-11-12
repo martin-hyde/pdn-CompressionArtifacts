@@ -1,7 +1,4 @@
 using CompressionArtifactsEffect;
-using ImageMagick;
-using System.Diagnostics;
-using System.IO;
 
 int checks = 0;
 void Check(bool condition, string message)
@@ -9,101 +6,74 @@ void Check(bool condition, string message)
     if (!condition) throw new InvalidOperationException(message);
     checks++;
 }
-byte[] Fixture(int width, int height, bool alpha)
+void Throws<T>(Action action, string message) where T : Exception
 {
-    var pixels = new byte[width * height * 4];
-    var random = new Random(546);
-    for (int y = 0; y < height; y++)
-    for (int x = 0; x < width; x++)
-    {
-        int i = (y * width + x) * 4;
-        pixels[i] = (byte)((x * 11 + y * 3 + random.Next(16)) % 256);
-        pixels[i + 1] = (byte)((y * 7 + (x / 8) * 40) % 256);
-        pixels[i + 2] = (byte)((x * 9 + y * 13) % 256);
-        pixels[i + 3] = alpha ? (byte)((x * 5 + y * 17) % 256) : (byte)255;
-    }
-    return pixels;
+    try { action(); }
+    catch (T) { checks++; return; }
+    throw new InvalidOperationException(message);
 }
-void SameAlpha(byte[] source, byte[] result, string context)
-{
-    Check(Enumerable.Range(0, source.Length / 4).All(p => source[p * 4 + 3] == result[p * 4 + 3]), context);
-}
-
-var input = Fixture(65, 49, true);
-foreach (CodecOptions codec in Enum.GetValues<CodecOptions>())
-{
-    byte[] original = (byte[])input.Clone();
-    var result = CompressionCodec.EncodeDecode(input, 65, 49, new CompressionSettings(Codec: codec));
-    Check(input.SequenceEqual(original), $"{codec}: source pixels were changed");
-    Check(result.Length == input.Length, $"{codec}: incorrect size");
-    Check(!input.SequenceEqual(result), $"{codec}: lossy output was unchanged");
-    if (codec is CodecOptions.JPEG or CodecOptions.HEIC) SameAlpha(input, result, $"{codec}: alpha was changed");
-    Console.WriteLine($"{codec}: odd-size RGBA round trip OK");
-}
+byte[] input = new byte[65 * 49 * 4];
+new Random(546).NextBytes(input);
+byte[] original = (byte[])input.Clone();
+var backend = new EchoBackend();
 foreach (CodecOptions codec in new[] { CodecOptions.JPEG_XL, CodecOptions.WebP, CodecOptions.AV1_AVIF })
 {
-    var result = CompressionCodec.EncodeDecode(input, 65, 49, new CompressionSettings(Codec: codec, Lossless: true));
-    Check(input.SequenceEqual(result), $"{codec}: lossless RGB/alpha mismatch");
+    byte[] lossless = CompressionCodec.EncodeDecode(input, 65, 49, new(Codec: codec, Lossless: true));
+    Check(lossless.SequenceEqual(input) && !ReferenceEquals(lossless, input), $"{codec}: lossless must preserve pixels without sharing the input array");
 }
-
-// Verify matting independently with exact expected bytes, including a half-alpha edge.
+// Exact matting values catch double application of partial transparency.
 byte[] edge = [20, 60, 180, 128, 99, 77, 55, 0, 10, 20, 30, 255];
-var jpegSettings = new CompressionSettings(BackgroundColor: 0x123456, PreserveJpegAlpha: false);
-byte[] matte = CompressionCodec.PrepareJpeg(edge, jpegSettings);
-Check(matte.SequenceEqual(new byte[] { 53, 56, 99, 255, 86, 52, 18, 255, 10, 20, 30, 255 }), "JPEG: custom matte blend mismatch");
-byte[] straight = CompressionCodec.PrepareJpeg(edge, jpegSettings with { PreserveJpegAlpha = true });
-Check(straight.SequenceEqual(new byte[] { 20, 60, 180, 255, 86, 52, 18, 255, 10, 20, 30, 255 }), "JPEG: straight RGB edge was matted twice");
-var opaque = CompressionCodec.EncodeDecode(input, 65, 49, jpegSettings);
-Check(Enumerable.Range(0, opaque.Length / 4).All(p => opaque[p * 4 + 3] == 255), "JPEG: flatten mode retained alpha");
-var black = CompressionCodec.EncodeDecode(input, 65, 49, jpegSettings with { BackgroundColor = 0 });
-Check(!black.SequenceEqual(opaque), "JPEG: background color had no effect");
-
-foreach (CodecOptions codec in new[] { CodecOptions.JPEG, CodecOptions.HEIC, CodecOptions.AV1_AVIF })
+foreach (CodecOptions codec in new[] { CodecOptions.JPEG, CodecOptions.HEIC })
 {
-    byte[][] chromaResults = new[] { ChromaOptions.YUV444, ChromaOptions.YUV422, ChromaOptions.YUV420 }
-        .Select(chroma => CompressionCodec.EncodeDecode(input, 65, 49, new CompressionSettings(Codec: codec, Chroma: chroma))).ToArray();
-    Check(!chromaResults[0].SequenceEqual(chromaResults[1]) && !chromaResults[1].SequenceEqual(chromaResults[2]), $"{codec}: chroma choices produced identical pixels");
+    var settings = new CompressionSettings(Codec: codec, BackgroundColor: 0x123456, PreserveOriginalAlpha: false);
+    Check(CompressionCodec.PrepareOpaquePixels(edge, settings).SequenceEqual(new byte[] { 53, 56, 99, 255, 86, 52, 18, 255, 10, 20, 30, 255 }), $"{codec}: custom matte");
+    Check(CompressionCodec.PrepareOpaquePixels(edge, settings with { PreserveOriginalAlpha = true }).SequenceEqual(new byte[] { 20, 60, 180, 255, 86, 52, 18, 255, 10, 20, 30, 255 }), $"{codec}: straight RGB");
+    byte[] restored = CompressionCodec.EncodeDecode(edge, 3, 1, settings with { PreserveOriginalAlpha = true }, backend: backend);
+    Check(restored[3] == 128 && restored[7] == 0 && restored[11] == 255, $"{codec}: restores original alpha after the backend");
+    Check(backend.LastPixels!.SequenceEqual(new byte[] { 20, 60, 180, 255, 86, 52, 18, 255, 10, 20, 30, 255 }), $"{codec}: encoder receives opaque RGB with transparent-pixel fill");
+    byte[] opaque = CompressionCodec.EncodeDecode(edge, 3, 1, settings, backend: backend);
+    Check(opaque.SequenceEqual(new byte[] { 53, 56, 99, 255, 86, 52, 18, 255, 10, 20, 30, 255 }), $"{codec}: flatten mode uses the chosen color");
+    Check(edge.SequenceEqual(new byte[] { 20, 60, 180, 128, 99, 77, 55, 0, 10, 20, 30, 255 }), $"{codec}: source preservation");
 }
-foreach (CodecOptions codec in new[] { CodecOptions.WebP, CodecOptions.AV1_AVIF })
+foreach (CodecOptions codec in new[] { CodecOptions.JPEG_XL, CodecOptions.JPEG_XR, CodecOptions.WebP, CodecOptions.HEIC, CodecOptions.AV1_AVIF })
 {
-    var low = CompressionCodec.EncodeDecode(input, 65, 49, new CompressionSettings(Codec: codec, AlphaQuality: 5));
-    var high = CompressionCodec.EncodeDecode(input, 65, 49, new CompressionSettings(Codec: codec, AlphaQuality: 100));
-    Check(Enumerable.Range(0, input.Length / 4).Any(p => low[p * 4 + 3] != high[p * 4 + 3]), $"{codec}: alpha quality had no effect");
-    SameAlpha(input, high, $"{codec}: alpha quality 100 was not lossless");
+    var settings = new CompressionSettings(Codec: codec, Quality: 17, Effort: 9, LosslessAlpha: false);
+    _ = CompressionCodec.EncodeDecode(input, 65, 49, settings, backend: backend);
+    Check(backend.LastSettings == settings && backend.Width == 65 && backend.Height == 49, $"{codec}: settings and dimensions reach the backend");
 }
-foreach (int effort in new[] { 0, 9 })
-foreach (CodecOptions codec in new[] { CodecOptions.JPEG_XL, CodecOptions.WebP })
-    Check(CompressionCodec.EncodeDecode(input, 65, 49, new CompressionSettings(Codec: codec, Effort: effort)).Length == input.Length, $"{codec}: effort endpoint failed");
-foreach (int speed in new[] { 0, 9 })
-    Check(CompressionCodec.EncodeDecode(input, 65, 49, new CompressionSettings(Codec: CodecOptions.AV1_AVIF, AvifSpeed: speed)).Length == input.Length, "AVIF: speed endpoint failed");
+Throws<InvalidOperationException>(() => CompressionCodec.EncodeDecode(input, 65, 49, new(Codec: CodecOptions.HEIC)), "HEIC must require the real backend");
+var missingHeic = new NotSupportedException("No HEIC encoder is installed.");
 try
 {
-    CompressionCodec.EncodeDecode(input, 65, 49, new CompressionSettings(), () => true);
-    throw new InvalidOperationException("Cancellation was ignored");
+    CompressionCodec.EncodeDecode(input, 65, 49, new(Codec: CodecOptions.HEIC), backend: new EchoBackend { Error = missingHeic });
+    throw new InvalidOperationException("Missing HEIC support must fail without approximating");
 }
-catch (OperationCanceledException) { checks++; }
-Check(edge.SequenceEqual(new byte[] { 20, 60, 180, 128, 99, 77, 55, 0, 10, 20, 30, 255 }), "JPEG mutated the original buffer");
-Console.WriteLine($"PASS: {checks} codec, alpha, chroma, lossless, and cancellation checks.");
-
-if (args.Contains("--benchmark"))
+catch (NotSupportedException ex)
 {
-    const int width = 1024, height = 768;
-    byte[] benchmarkInput = Fixture(width, height, false);
-    Console.WriteLine($"AVIF benchmark {width}x{height}; CPUs={Environment.ProcessorCount}; auto threads={AvifCodec.GetThreadCount(0)}");
-    foreach (var run in new[] { (Speed: 6, Threads: 1), (Speed: 6, Threads: 0), (Speed: 9, Threads: 0) })
+    Check(ReferenceEquals(ex, missingHeic), "Propagate the HEIC availability error unchanged");
+}
+Check(input.SequenceEqual(original), "Source preservation");
+Throws<ArgumentException>(() => CompressionCodec.EncodeDecode(input, 0, 49, new()), "Invalid dimensions");
+Throws<ArgumentException>(() => CompressionCodec.EncodeDecode(input, 64, 49, new()), "Mismatched buffer");
+Throws<InvalidOperationException>(() => CompressionCodec.EncodeDecode(input, 65, 49, new()), "Real codecs need a host backend");
+Throws<OperationCanceledException>(() => CompressionCodec.EncodeDecode(input, 65, 49, new(), () => true, backend), "Pre-cancel");
+int cancellationChecks = 0;
+Throws<OperationCanceledException>(() => CompressionCodec.EncodeDecode(input, 65, 49, new(Codec: CodecOptions.HEIC), () => ++cancellationChecks > 1, backend), "Check cancellation after a native HEIC round trip");
+Throws<System.IO.InvalidDataException>(() => CompressionCodec.EncodeDecode(input, 65, 49, new(), backend: new EchoBackend { WrongSize = true }), "Reject changed dimensions");
+Console.WriteLine($"PASS: {checks} JPEG/HEIC alpha and fill, native-only HEIC, lossless, backend contract, and cancellation checks.");
+sealed class EchoBackend : ICompressionBackend
+{
+    public CompressionSettings? LastSettings { get; private set; }
+    public int Width { get; private set; }
+    public int Height { get; private set; }
+    public bool WrongSize { get; init; }
+    public Exception? Error { get; init; }
+    public byte[]? LastPixels { get; private set; }
+    public byte[] RoundTrip(byte[] pixels, int width, int height, CompressionSettings settings, Func<bool>? isCanceled)
     {
-        var watch = Stopwatch.StartNew();
-        var result = CompressionCodec.EncodeDecode(benchmarkInput, width, height, new CompressionSettings(Codec: CodecOptions.AV1_AVIF, AvifSpeed: run.Speed, AvifThreads: run.Threads));
-        Console.WriteLine($"Direct AVIF speed={run.Speed} threads={AvifCodec.GetThreadCount(run.Threads)}: {watch.Elapsed.TotalSeconds:F3}s");
+        LastSettings = settings; Width = width; Height = height;
+        LastPixels = (byte[])pixels.Clone();
+        if (Error is not null) throw Error;
+        return WrongSize ? [] : (byte[])pixels.Clone();
     }
-    using var oldImage = new MagickImage(benchmarkInput, new MagickReadSettings { Width = width, Height = height, Depth = 8, Format = MagickFormat.Bgra }) { Format = MagickFormat.Avif, Quality = 35 };
-    oldImage.Settings.SetDefine(MagickFormat.Heic, "speed", "4");
-    var oldWatch = Stopwatch.StartNew();
-    using var stream = new MemoryStream();
-    oldImage.Write(stream);
-    stream.Position = 0;
-    using var oldDecoded = new MagickImage(stream);
-    using var oldPixels = oldDecoded.GetPixels();
-    _ = oldPixels.ToByteArray(PixelMapping.BGRA);
-    Console.WriteLine($"ImageMagick AVIF comparison speed=4: {oldWatch.Elapsed.TotalSeconds:F3}s");
 }

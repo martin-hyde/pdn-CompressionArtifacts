@@ -17,4 +17,6 @@ AssemblyLoadContext.Default.Resolving += (_, name) =>
     return File.Exists(path) ? AssemblyLoadContext.Default.LoadFromAssemblyPath(path) : null;
 };
 
-return ControlChecks.Run();
+int controlResult = ControlChecks.Run();
+int bitmapResult = BitmapChecks.Run();
+return controlResult != 0 ? controlResult : bitmapResult;

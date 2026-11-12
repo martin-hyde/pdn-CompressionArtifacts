@@ -1,4 +1,4 @@
-Compression Artifacts for paint.net
+Compression Artifacts v2.0.0 for paint.net
 
 Requirements: paint.net 5.2 or newer on Windows x64 (Intel/AMD).
 
@@ -7,12 +7,13 @@ Installation
 2. Extract this archive.
 3. Copy the extracted CompressionArtifacts folder into paint.net's Effects folder.
    A typical location is C:\Program Files\paint.net\Effects.
+   When updating, replace the old CompressionArtifacts folder with this one.
 4. Restart paint.net.
 5. Open Effects > Photo > Compression Artifacts.
 
-Keep all DLLs together. You do not need to install a .NET SDK.
-
-The licenses and sources folders contain legal materials for bundled codecs.
-Keep these materials with copies of the package you redistribute.
+Keep CompressionArtifacts.dll and CompressionArtifacts.deps.json together.
+The plugin uses paint.net's codecs; no separate encoder DLLs or .NET SDK are needed.
+HEIC requires working Windows HEIC/HEVC codec support. It reports an error if
+unavailable; there is no approximation or fallback.
 
 Project and support: https://github.com/martin-hyde/pdn-CompressionArtifacts

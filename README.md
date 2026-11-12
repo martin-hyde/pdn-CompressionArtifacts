@@ -20,12 +20,16 @@ You do not need to install the .NET SDK to use the plugin.
 
 ## Installation
 
-1. Download [CompressionArtifacts-v1.0.0-win-x64.zip](https://github.com/martin-hyde/pdn-CompressionArtifacts/releases/download/v1.0.0/CompressionArtifacts-v1.0.0-win-x64.zip) from the [Releases page](https://github.com/martin-hyde/pdn-CompressionArtifacts/releases).
+1. Download [CompressionArtifacts-v2.0.0-win-x64.zip](https://github.com/martin-hyde/pdn-CompressionArtifacts/releases/download/v2.0.0/CompressionArtifacts-v2.0.0-win-x64.zip) from the [Releases page](https://github.com/martin-hyde/pdn-CompressionArtifacts/releases).
 2. Close paint.net and extract the ZIP.
 3. Copy the extracted `CompressionArtifacts` folder into paint.net's `Effects` folder. For a typical desktop installation, this is `C:\Program Files\paint.net\Effects`.
 4. Restart paint.net and open **Effects → Photo → Compression Artifacts**.
 
-Copy the whole plugin folder: the effect needs the DLLs beside it. Keep the release's license notices and dependency sources with your downloaded package. The release ZIP is the ready-to-install download; GitHub's automatically generated source archives contain the project source.
+Copy the whole plugin folder. The release ZIP is the ready-to-install download; GitHub's automatically generated source archives contain the project source.
+
+When updating from the version with bundled encoders, replace the old `CompressionArtifacts` plugin folder with the extracted one.
+
+Version 2 uses paint.net's codecs and needs no bundled encoder libraries.
 
 ## Using the effect
 
@@ -42,25 +46,25 @@ Copy the whole plugin folder: the effect needs the DLLs beside it. Keep the rele
 | JPEG | Quality, chroma subsampling, background color, preservation of original transparency |
 | JPEG XL | Quality, encoding effort, lossless mode |
 | JPEG XR | Quality; retains an alpha channel |
-| WebP | Quality, encoding effort, alpha quality, lossless mode |
-| HEIC approximation | Quality, chroma subsampling |
-| AV1 / AVIF | Quality, chroma subsampling, encoding speed, CPU threads, alpha quality, lossless mode |
+| WebP | Quality, encoding effort, lossless mode |
+| HEIC | Quality, background color, preservation of original transparency; requires working Windows HEIC/HEVC codec support |
+| AV1 / AVIF | Quality, chroma subsampling, encoding effort, lossless alpha, lossless mode |
 
-JPEG, JPEG XL, JPEG XR, WebP, and AVIF use real encoding and decoding in memory. **HEIC is an approximation**, not an HEVC encode, and should not be used to judge how an actual HEIC export will look.
+All six formats use paint.net's public `IFileTypesService` to encode and decode in memory. **HEIC uses the real encoder only.** If Windows HEIC/HEVC codec support is unavailable, selecting HEIC reports an error. There is no approximation or fallback. Its encoder exposes only quality; chroma subsampling and encoding effort are disabled for it. The effect supplies the shared transparency and fill controls described below.
 
 **Lossless mode** leaves the original pixels unchanged. It adds no artifacts and skips encoding, so settings that affect lossy artifacts or encoding effort are disabled.
 
-### JPEG and transparency
+### JPEG and HEIC transparency
 
-**Preserve original transparency** keeps the original alpha channel and applies JPEG compression to the color channels. This lets you add JPEG artifacts to a transparent layer even though JPEG files themselves do not support transparency.
+**Preserve original transparency (JPEG/HEIC)** compresses the color channels and restores the original alpha channel after decoding. This lets you add real JPEG or HEIC compression artifacts to a transparent layer. Transparency is restored by the effect; it is not stored in the temporary compressed stream.
 
-With preservation enabled, the background color fills fully transparent pixels during compression. It can influence color bleeding around their edges. With preservation disabled, transparent and partially transparent pixels are flattened against the chosen color. The color picker accepts arbitrary colors, including hexadecimal RGB values.
+With preservation enabled, **JPEG/HEIC Alpha Fill** fills fully transparent pixels during compression. It can influence color bleeding around their edges. Partially transparent pixels retain their straight RGB values before alpha is restored, avoiding double matting. With preservation disabled, transparent and partially transparent pixels are flattened against the chosen color. Choose any RGB color using the color wheel or the R, G, and B fields.
 
-### AVIF speed
+### Encoding effort
 
-AVIF uses a multithreaded CPU encoder. **Speed 9** is the fastest setting and the default; lower values spend more time encoding and can produce different artifacts at the same quality.
+JPEG XL, WebP, and AVIF share one **Encoding effort** control: **0 is fast, 9 is slow**. The default is 0. Higher effort spends more time encoding and can produce different artifacts at the same quality. JPEG XL maps this scale to effort 1–9, WebP to effort 0–9, and AVIF to paint.net's Fast, Medium, Slow, and VerySlow presets. Several adjacent slider positions therefore use the same AVIF preset.
 
-**CPU threads 0** selects automatically, using up to 16 logical processors. You can select 1–64 threads manually. Extra threads are most useful for larger images; they may make little difference on small images.
+paint.net's AVIF encoder manages its CPU threads internally. Its public save options do not expose a thread count. **Lossless alpha (AVIF)** preserves transparency exactly; disabling it lets AVIF compress the alpha channel lossily. WebP manages alpha compression internally.
 
 Very slow settings can delay preview updates and cancellation because an AVIF encode must finish before it can stop.
 
@@ -76,4 +80,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the source layout, verification comma
 
 ## License
 
-The plugin source is available under the [Zero-Clause BSD license](LICENSE.md). Codec dependencies have their own licenses; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+The plugin source is available under the [Zero-Clause BSD license](LICENSE.md).
