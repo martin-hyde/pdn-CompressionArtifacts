@@ -5,3 +5,6 @@
 CompressionArtifacts/dist/
 CompressionArtifacts/*.zip
 CompressionArtifacts/*.7z
+/CHANGELOG.md
+/PLUGIN-RULES.md
+/API-REVIEW.md

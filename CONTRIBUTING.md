@@ -59,33 +59,23 @@ These check which controls are enabled when the codec or lossless setting change
 
 The automated checks do not inspect the dialog visually or render through the paint.net canvas. Before releasing a change, also check the effect in paint.net with both opaque and transparent images, a small rectangular selection, and a nonrectangular selection. Confirm that pixels outside the selection and the original layer remain unchanged.
 
-See [PLUGIN-RULES.md](PLUGIN-RULES.md) for the rule-by-rule source audit and the implementation boundaries to preserve.
-
 ## Release packaging
 
-The first public release is **v1.0.0**. Its assembly version is `1.0.0.0` in `CompressionArtifacts.cs`. Keep the assembly version and release tag consistent when preparing future releases.
+Keep the assembly version and GitHub release tag consistent when preparing a release. Build and run the relevant checks first.
 
-1. Build and run the relevant checks.
-2. Copy the repository documentation and license texts into the distribution folder:
+The install ZIP contains only seven runtime files under `CompressionArtifacts`, `INSTALL.txt`, the project and dependency license notices, and the supplied dependency sources. Debug symbols, tests, developer documentation, and build tools are excluded.
 
-   ```powershell
-   Copy-Item README.md, LICENSE.md, THIRD-PARTY-NOTICES.md, CONTRIBUTING.md, CHANGELOG.md, PLUGIN-RULES.md -Destination CompressionArtifacts/dist
-   Copy-Item licenses -Destination CompressionArtifacts/dist -Recurse -Force
-   ```
+The dependency source archives must be available under `CompressionArtifacts/dist/sources`:
 
-3. Include the unmodified dependency source archives under `CompressionArtifacts/dist/sources`. The initial release includes these archives:
+- [libheif 1.20.2](https://codeload.github.com/strukturag/libheif/tar.gz/refs/tags/v1.20.2), saved as `libheif-1.20.2.tar.gz`
+- [LibHeifSharp 3.2.0 source revision](https://codeload.github.com/0xC0000054/libheif-sharp/tar.gz/d208cd6f3ba9023c6c3692678a7c421c3e33c7b9), saved as `libheif-sharp-3.2.0.tar.gz`
 
-   - [libheif 1.20.2](https://codeload.github.com/strukturag/libheif/tar.gz/refs/tags/v1.20.2), saved as `libheif-1.20.2.tar.gz`
-   - [LibHeifSharp 3.2.0 source revision](https://codeload.github.com/0xC0000054/libheif-sharp/tar.gz/d208cd6f3ba9023c6c3692678a7c421c3e33c7b9), saved as `libheif-sharp-3.2.0.tar.gz`
+Create the ZIP with the packaging script, which uses an explicit list of runtime and legal files:
 
-   See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for dependency versions and source references. Update the notices and supplied sources when changing dependencies.
+```powershell
+./scripts/Package.ps1 -OutputPath CompressionArtifacts/CompressionArtifacts-v1.0.0-win-x64.zip
+```
 
-4. Create the installable archive:
+Use the appropriate version in the output filename. The script also accepts `-RuntimeDirectory` and `-SourcesDirectory` when using another build location. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for dependency versions and source references; update the script and notices when changing dependencies.
 
-   ```powershell
-   Compress-Archive -Path CompressionArtifacts/dist/* -DestinationPath CompressionArtifacts/CompressionArtifacts-v1.0.0-win-x64.zip -Force
-   ```
-
-5. Attach the ZIP to the GitHub release. Users should download this package to install the plugin.
-
-Commit the source, project files, icon, documentation, and license texts. The `.gitignore` excludes build output, local build tools, the distribution folder, and generated ZIP/7z archives. Publish installable archives as release assets.
+Attach the ZIP to the GitHub release. Commit source, project files, the icon, user/developer documentation, packaging scripts, and license texts to the repository. The `.gitignore` excludes build output, local build tools, distribution files, and generated archives.

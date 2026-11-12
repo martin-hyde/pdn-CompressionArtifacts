@@ -15,6 +15,6 @@ The native libheif package includes libaom (BSD 2-Clause), dav1d (BSD 2-Clause),
 - [dav1d](https://code.videolan.org/videolan/dav1d)
 - [libde265](https://github.com/strukturag/libde265)
 
-The repository's `licenses` folder contains the dependency license texts. Release packages also include this folder and the upstream libheif and LibHeifSharp source archives under `sources`. See [CONTRIBUTING.md](CONTRIBUTING.md#release-packaging) for the source archive references and packaging instructions.
+The `licenses` folder contains the dependency license texts. Release packages also include the upstream libheif and LibHeifSharp source archives under `sources`, corresponding to the source versions and revisions linked above.
 
 `licenses/Magick.NET-Notice.txt` contains the ImageMagick and bundled codec notices. `licenses/LGPL-3.0.txt` and `licenses/GPL-3.0.txt` contain the GNU license texts. The paint.net SDK supplies reference assemblies for compilation and is not included in the release package.
