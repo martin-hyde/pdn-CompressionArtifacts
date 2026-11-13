@@ -20,14 +20,14 @@ You do not need to install the .NET SDK to use the plugin.
 
 ## Installation
 
-1. Download [CompressionArtifacts-v2.0.0-win-x64.zip](https://github.com/martin-hyde/pdn-CompressionArtifacts/releases/download/v2.0.0/CompressionArtifacts-v2.0.0-win-x64.zip) from the [Releases page](https://github.com/martin-hyde/pdn-CompressionArtifacts/releases).
+1. Download [CompressionArtifacts-v2.0.0-win-x64.7z](https://github.com/martin-hyde/pdn-CompressionArtifacts/releases/download/v2.0.0/CompressionArtifacts-v2.0.0-win-x64.7z) from the [Releases page](https://github.com/martin-hyde/pdn-CompressionArtifacts/releases).
 2. Close paint.net and extract the ZIP.
-3. Copy the extracted `CompressionArtifacts` folder into paint.net's `Effects` folder. For a typical desktop installation, this is `C:\Program Files\paint.net\Effects`.
+3. Copy the extracted `CompressionArtifacts.dll` file into paint.net's `Effects` folder. For a typical desktop installation, this is `C:\Program Files\paint.net\Effects`.
 4. Restart paint.net and open **Effects → Photo → Compression Artifacts**.
 
 Copy the whole plugin folder. The release ZIP is the ready-to-install download; GitHub's automatically generated source archives contain the project source.
 
-When updating from the version with bundled encoders, replace the old `CompressionArtifacts` plugin folder with the extracted one.
+When updating from the version with bundled encoders, replace the old `CompressionArtifacts.dll` plugin file with the extracted one.
 
 Version 2 uses paint.net's codecs and needs no bundled encoder libraries.
 
